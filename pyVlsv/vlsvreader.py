@@ -29,7 +29,6 @@ import os
 import sys
 import re
 import numbers
-import mmap
 import vlsvvariables
 from reduction import datareducers,multipopdatareducers,data_operators,v5reducers,multipopv5reducers
 try:
@@ -138,7 +137,6 @@ class VlsvReader(object):
          print("File not found: ", self.file_name)
          raise e
       f=PicklableFile(open(self.file_name,"rb")) # unmanaged life cycle for now
-      self.__mmapped = mmap.mmap(f.fileno(), 0, prot=mmap.PROT_READ)
       self.__xml_root = ET.fromstring("<VLSV></VLSV>")
       self.__fileindex_for_cellid={}
       self.__max_spatial_amr_level = -1
@@ -2874,6 +2872,11 @@ class VlsvReader(object):
          num_of_blocks = self.__blocks_per_cell[pop][cells_with_blocks_index]
 
 
+      if self.__fptr.closed:
+         fptr = open(self.file_name,"rb")
+      else:
+         fptr = self.__fptr
+
       # Read in avgs and velocity cell ids:
       for child in self.__xml_root:
          # Read in avgs
@@ -2886,10 +2889,11 @@ class VlsvReader(object):
             # Navigate to the correct position
             offset_avgs = int(offset * vector_size * element_size + ast.literal_eval(child.text))
 
+            fptr.seek(offset_avgs)
             if datatype == "float" and element_size == 4:
-               data_avgs =np.frombuffer(self.__mmapped[offset_avgs:offset_avgs+4*vector_size*num_of_blocks ],dtype=np.float32) 
+               data_avgs = np.fromfile(fptr, dtype = np.float32, count = vector_size*num_of_blocks)
             if datatype == "float" and element_size == 8:
-               data_avgs =np.frombuffer(self.__mmapped[offset_avgs:offset_avgs+4*vector_size*num_of_blocks ],dtype=np.float64) 
+               data_avgs = np.fromfile(fptr, dtype = np.float64, count = vector_size*num_of_blocks)
             data_avgs = data_avgs.reshape(num_of_blocks, vector_size)
          # Read in block coordinates:
          if ("name" in child.attrib) and (child.attrib["name"] == pop) and (child.tag == "BLOCKIDS"):
@@ -2900,10 +2904,11 @@ class VlsvReader(object):
 
             offset_block_ids = int(offset * vector_size * element_size + ast.literal_eval(child.text))
 
+            fptr.seek(offset_block_ids)
             if datatype == "uint" and element_size == 4:
-               data_block_ids = np.frombuffer(self.__mmapped[offset_block_ids:offset_block_ids+4*vector_size*num_of_blocks ],dtype=np.uint32)
+               data_block_ids = np.fromfile(fptr, dtype = np.uint32, count = vector_size*num_of_blocks)
             elif datatype == "uint" and element_size == 8:
-               data_block_ids = np.frombuffer(self.__mmapped[offset_block_ids:offset_block_ids+8*vector_size*num_of_blocks ],dtype=np.uint64)
+               data_block_ids = np.fromfile(fptr, dtype = np.uint64, count = vector_size*num_of_blocks)
             else:
                print("Error! Bad data type in blocks!")
                return
@@ -2916,16 +2921,19 @@ class VlsvReader(object):
 
             offset_block_ids = int(offset * vector_size * element_size + ast.literal_eval(child.text))
 
+            fptr.seek(offset_block_ids)
             if datatype == "uint" and element_size == 4:
-               data_block_ids = np.frombuffer(self.__mmapped[offset_block_ids:offset_block_ids+4*vector_size*num_of_blocks ],dtype=np.uint32)
+               data_block_ids = np.fromfile(fptr, dtype = np.uint32, count = vector_size*num_of_blocks)
             elif datatype == "uint" and element_size == 8:
-               data_block_ids = np.frombuffer(self.__mmapped[offset_block_ids:offset_block_ids+8*vector_size*num_of_blocks ],dtype=np.uint64)
+               data_block_ids = np.fromfile(fptr, dtype = np.uint64, count = vector_size*num_of_blocks)
             else:
                print("Error! Bad data type in blocks!")
                return
 
             data_block_ids = data_block_ids.reshape(num_of_blocks, vector_size)
 
+      if self.__fptr.closed:
+         fptr.close()
 
       # Check to make sure the sizes match (just some extra debugging)
       if len(data_avgs) != len(data_block_ids):
